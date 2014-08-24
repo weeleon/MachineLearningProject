@@ -1,0 +1,275 @@
+---
+title: "Classification of Human Activity Using Measurements from Wearable Devices"
+author: "Leonard Wee"
+date: "24 August 2014"
+output: html_document
+---
+  
+# Introduction
+Human activity recognition using wearable physical measurement devices is an
+active area for data science research. The quantity of physical activity data
+continues to grow, but further work is required to understand how to reliably
+assign meaning to this data.
+
+A promising line of inquiry that might successfully bridge the data-to-understanding
+gap is machine-learning classifiers/predictors that recognise discrete modes of
+human activity (e.g. correct versus incorrect weight-lifting exercises).
+   
+   
+   
+   
+
+# Data Source
+The data for this R-based project is the Weight Lifting Exercise Dataset
+(http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises) by
+Velloso et al.
+
+Six healthy volunteers had been asked to perform one set of 10 repetitions of
+Unilateral Dumbbell Bicep Curls in all of five different modes :  
+- correctly according to international exercise specification (Class A),  
+- throwing elbows towards the front (Class B),  
+- half dumbbell lifts (Class C),  
+- lowering the dumbbell halfway (Class D), and  
+- throwing hips towards the front (Class E).  
+
+The training data is downloadable here : <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The raw training data consists of 19622 rows of 160 variables, of which the last
+column is the known classification of the exercise. The data consists of accelerometer,
+gyroscope and magnetometer measurements from devices placed respectively on a
+volunteer's forearm, wrist, hip belt and directly on the dumbbell.
+
+The final testing data of 20 distinct observations can be obtained here : <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+
+
+
+
+# Data Pre-processing
+
+## Non-value columns for prediction
+To prepare the training data for machine learning, the columns of the *testing*
+data set was inspected for containing no data except NA. Since only the non-NA
+columns could be used for the prediction exercise, only these columns were
+retained in the *training* data set. The result of this pre-process was a data
+frame of 60 columns.
+
+## Date, time and identifier columns
+The machine-based classifier must not be trained against non-measurements in
+the data, such as time-date stamps, frame counts or subject identifiers. Therefore,
+the first seven columns were also removed from the training data set. The result
+of this pre-process was a data frame of 53 columns.
+
+## Checks for zero or nearly-zero variances
+Parameters which do not vary much (or none at all) do not contribute to classifier
+learning, therefore it is advisable to check for these. A rapid check concluded
+that usable variance was observed in all the above 53 columns.
+
+```
+nzv <- nearZeroVar(indata[,-53], saveMetrics = TRUE)
+if (sum(nzv$nzv) > 0) {
+      print("Warning - there are parameters with zero or near-zero variance.")
+      }
+rm(nzv)
+```
+
+## Tighly-correlated parameters
+Inclusion of redundant parameters introduces the possibility of mistaken learning
+and/or longer computation times for classifier training. The latter is noteworthy
+since bootstrapping and resampling algorithms will be included. Tighly-correlated
+values (threshold correlation coefficient = 0.90) were removed to created a
+*correlation-filtered training* data set.
+
+```
+highlyCor <- findCorrelation(cor(indata[,-53]), cutoff = 0.90)
+filteredInData <- indata[,-highlyCor]
+```
+
+The result of this pre-process was a *new* data frame of 46 columns.
+
+
+
+
+# Classifier Training
+Two candidate classifiers were trained on the pre-processed training data
+(52 parameters) as well as on the correlation-filtered training data
+(45 parameters), leading to four accuracy metrics to assess by cross-validation.
+
+Multi-linear regression-based models were not used for this discrete 5-factor
+classification problem, because a linear coefficient variation between the parameters
+for each class of activity was not expected a priori.
+
+Further, the use of tree-based classification was preferable for this problem
+because such methods are more robust with respect to the skewness or
+asymmetric distribution of parameter values.
+
+*No data was pre-processed by centre and scaling prior to training and testing.*
+
+
+## Internal cross-validation
+For each classification candidate, the in-sample accuracy was assessed using
+**repeated 10-fold cross-validation with 5 repetitions**. To apply this consistently
+across all candidate classifiers, the following **trainControl** object in the
+package "caret" was defined :
+
+```
+fitControl <- trainControl(
+      ## 10-fold repeated cross-validation
+      method = "repeatedcv", number = 10,
+      ## repeated five times
+      repeats = 5
+      ## no pre-processing scaling and centering not critical for tree methods
+      )
+```
+
+## Simple tree-based classification design
+A simple decision tree was implemented using an "rpart" method call inside
+of "caret", with a range of tunable complexity parameters set by the argument
+**tuneGrid** :  
+
+```
+set.seed(33524) #set initial seed
+## learning object 1 : simple classification tree with all 52 variables
+treeFit1 <- train(classe ~ ., data = indata, method = "rpart",
+                  trControl = fitControl,
+                  tuneGrid = expand.grid(.cp=c(0.0001,0.001,0.003,0.01,0.03,0.1))
+                  )
+## learning object 2 : simple classification tree with 45 correlation-filtered variables
+set.seed(33524) #set initial seed
+treeFit2 <- train(classe ~ ., data = filteredInData, method = "rpart",
+                  trControl = fitControl,
+                  tuneGrid = expand.grid(.cp=c(0.0001,0.001,0.003,0.01,0.03,0.1))
+)
+```
+The complexity parameter sets controls the penalty for introducing an additional
+branch in the decision tree, therefore low values correspond more closely to
+unconstrained trees.
+
+The in-sample cross-validation accuracy depends strongly on the complexity parameter,
+with the best accuracy result occurring at the lowest value of the tuning parameter.
+For larger values of the complexity parameter, training on the processed data set
+with 52 parameters slightly performed marginally better than training with 45 parameters
+in the correlation-filtered data set. A graphical assessment of the performance
+against complexity parameter is shown below in Figure 1.
+
+![alt text](/Users/lenw/Documents/Coursera_Offline/Data_Science/Machine_Learning_Project/fig1.png)
+
+## Random-forest classification design
+A random-forest decision tree was implemented using an "rf" method call inside
+of "caret", with a range of four tunable "mtry" parameters set by the argument
+**tuneGrid** :  
+
+```
+## learning object 3 : random forest classification with all variables
+set.seed(33524) #reset initial seed
+forestFit1 <- train(classe ~ ., data = indata, method = "rf",
+                    trControl = fitControl,
+                    tuneGrid = expand.grid(.mtry=c(23,27,45,52))
+                    )
+## learning object 4 : random forest classification with correlation-filtered variables
+set.seed(33524) #reset initial seed
+forestFit2 <- train(classe ~ ., data = filteredInData, method = "rf",
+                    trControl = fitControl,
+                    tuneGrid = expand.grid(.mtry=c(23,27,45))
+                    )
+```
+
+The random forest algorithm is a bootstrapped and averaged decision tree over many
+repeated samples of a fixed number of parameters. The number of parameters to sample
+is controlled by the parameter "mtry", such that a higher number implies a more
+complex decision tree. In the above case, we have taken the default number of trees
+(ntree = 1500).
+
+The performance of the random forest classifier was uniformly very high (always
+above 99% accuracy) and was roughly insensitive to the number of parameters
+sampled in each tree (mtry). The best accuracy in both classifiers was obtained
+for *mtry = 23*. There was no notable differences in performance between the cleaned
+training set versus the correlation-filtered training set. The resampling profile dependence on *mtry* is shown below in Figure 2.
+
+![alt text](/Users/lenw/Documents/Coursera_Offline/Data_Science/Machine_Learning_Project/fig2.png)
+
+## Estimating of out-of-sample accuracy
+The optimal performance for either of the CART-based classifiers was obtained for
+the lowest complexity parameter (*Cp = 0.0001*), resulting in a cross-validation accuracy of 94.0% (SD 0.6%) for the 52-parameter training set versus 93.5%
+(SD 0.6%) for the correlation-filtered 45-parameter data set.
+
+The optimal performance for either of the Random-Forest classifiers was obtained
+for a median values of the *mtry* parameter (*mtry = 23*), resulting in a
+cross-validation accuracy of 99.6% (SD 0.2%) for the 52-parameter training
+set versus 99.5% (SD 0.2%) for the correlation-filtered 45-parameter data set.
+
+Since robust internal cross-validation was used, the expected out-of-sample
+accuracy has been reliably estimated. However, since cross-validation is known
+to over-estimate the out-of-sample accuracy, it would be conservative to state
+the lower limit of the expected accuracy.
+
+**Therefore, in a final test sample, it is expected that the CART-based
+simple trees should correctly predict 18 out of the 20 test cases. The random
+forest algorithm is expected to correctly predict 20 out of the 20 test cases.**
+
+
+## Classifier selection
+In spite of the significantly longer computation time, the random forest
+approach was clearly superior to the simple decision tree-based method.
+
+The cross-validation accuracy was not dependent on the number of columns in the
+training data set, however CPU time was reduced by approximately 30% when
+using the correlation-filtered training data.
+
+To proceed to the one-time final test, the predicted classifications of the
+20 test cases were saved as a vector of factors :
+
+```
+answer <- predict(forestFit2, newdata=finalTest)
+```
+
+File formats for upload and submission to the Coursera assignment page were processed
+using the *pml_write_files* given in the project instructions.
+
+
+
+
+# Results of Final Test
+In the final test, the above classifier was applied to the quarantined
+sample of 20 test cases. As expected, the random-forest classifier based
+on the correlation-filtered training set was successfully able to predict
+20 out of the 20 test cases (success rate = 100%).
+
+The final test sample size was recognised to be presently too small to accurately
+estimate an out-of-sample overall sensitivity and specificity of correct (versus
+incorrect) classifications physical activity, nor was it possible to generate
+confusion matrices for predicted and true classifications.
+
+
+
+
+# Conclusion
+A random forest machine learning algorithm has been trained on a 23-parameter
+decision tree using a 45-parameter training data set. Internal 10-fold
+cross-validation was repeated 5 times to generate an estimate of the learning
+accuracy (99.5% with a standard deviation of 0.2%). The above classifier correctly predicted the physical activity classification for 20 out of 20 quarantined test
+instances.
+
+More information about the weight-lifting data set may be found at:
+<http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz39tstDjrm>
+
+More details on the "caret" package may be located at CRAN :
+<http://caret.r-forge.r-project.org>
+
+# References
+
+E. Velloso, A. Bulling, H. Gellersen, W. Ugulino, H. Fuks (2013) Qualitative Activity Recognition of Weight Lifting Exercises, **Proceedings of 4th International Conference in Cooperation with SIGCHI** Stuttgart, Germany: ACM SIGCHI, 2013.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
