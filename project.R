@@ -202,4 +202,33 @@ pml_write_files = function(x){
 pml_write_files(answer)
 
 
+#visualisation and plotting for the purpose of the report
+id <- rep("CART-52",6)
+treeComp1 <- cbind(treeFit1$results,id)
+id <- rep("CART-45",6)
+treeComp2 <- cbind(treeFit2$results,id)
+treeAccuracy <- rbind(treeComp1,treeComp2)
+treeAccuracy
+## --------------------------
+id <- rep("CART-52",4)
+forestComp1 <- cbind(forestFit1$results,id)
+id <- rep("CART-45",3)
+forestComp2 <- cbind(forestFit2$results,id)
+forestAccuracy <- rbind(forestComp1,forestComp2)
+forestAccuracy
+
+
+lp <- ggplot(data=treeAccuracy,aes(x=cp,y=Accuracy,group=id,colour=id))
+lp <- lp + geom_line()+geom_point(size=4)
+lps <- lp + scale_colour_discrete(name="Training Data Set",breaks=c("CART-52", "CART-45"),labels=c("Pre-processed", "Correlation-Filtered")) + scale_shape_discrete(name="Training Data Set",breaks=c("CART-52", "CART-45"),labels=c("Pre-processed", "Correlation-Filtered")) +ylim(0,1) +xlab("Complexity Parameter, Cp") +ylab("Accuracy (repeated cross-validation)") +ggtitle("Fig.1. In-sample Accuracy of\nCART Decision Tree by Tuning Parameter")
+lps
+dev.copy(png,"fig1.png",height=480,width=600,units="px"); dev.off();
+## --------------------------
+lp <- ggplot(data=forestAccuracy,aes(x=mtry,y=Accuracy,group=id,colour=id))
+lp <- lp + geom_line()+geom_point(size=4)
+lps <- lp + scale_colour_discrete(name="Training Data Set",breaks=c("CART-52", "CART-45"),labels=c("Pre-processed", "Correlation-Filtered")) + scale_shape_discrete(name="Training Data Set",breaks=c("CART-52", "CART-45"),labels=c("Pre-processed", "Correlation-Filtered")) +ylim(0,1) +xlab("Number of Tree Parameters, mtry") +ylab("Accuracy (repeated cross-validation)") +ggtitle("Fig.2. In-sample Accuracy\nof Random Forest by Tuning Parameter")
+lps
+dev.copy(png,"fig2.png",height=480,width=600,units="px"); dev.off();
+
+
 
